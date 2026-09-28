@@ -1,0 +1,11 @@
+# Googly-Planet Invasion on Render (free web service, WebSockets supported). The game lives in web/.
+services:
+  - type: web
+    name: googly-planet-invasion
+    runtime: node
+    plan: free
+    rootDir: web
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /health
+    autoDeploy: true

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05060c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Googly-Planet Invasion</title>
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{ "imports": { "three": "/three/three.module.js", "three/addons/": "/three/addons/" } }</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="labels"></div>
+
+<!-- title -->
+<section id="scr-title" class="screen">
+  <div class="card">
+    <h1><span class="g">GOOGLY</span><span class="d">-</span><span class="p">PLANET</span><span class="s">INVASION</span></h1>
+    <p class="sub">Fly your UFO, shoot paint at planets, and take over the whole universe.</p>
+    <div id="invite" class="banner hidden"></div>
+    <input id="nm" maxlength="14" placeholder="Your name" autocomplete="off">
+    <div class="label">YOUR PAINT COLOUR</div>
+    <div id="swatches"></div>
+    <div class="coinrow"><span class="gems">💎 <b id="t-gems">0</b> gems</span><button id="b-shop" class="gold">👽 SKINS &amp; UFO PAINT</button></div>
+    <button id="b-solo" class="big green wide">▶ PLAY SOLO<small id="solo-sub">just you in your UFO · starts right away</small></button>
+    <button id="b-online" class="big blue wide">PLAY ONLINE<small>optional · up to 3 friends ride in your UFO</small></button>
+    <div class="row"><button id="b-fs" class="grey">⛶ Full screen</button><button id="b-music" class="grey">♪ Music</button><button id="b-sfx" class="grey">🔊 Sound</button><button id="b-help" class="grey">? How to play</button></div>
+  </div>
+</section>
+
+<!-- online -->
+<section id="scr-online" class="screen hidden">
+  <div class="card wide">
+    <h2>PLAY ONLINE</h2>
+    <p class="sub">Your UFO has 4 seats: the pilot flies and paints, the other 3 are gunners with their own paint cannons. Only real people — empty seats stay empty.</p>
+    <p class="tiny" id="on-status">Connecting to the server…</p>
+    <div class="row"><button id="on-pub" class="green">+ PUBLIC UFO</button><button id="on-priv" class="blue">🔒 PRIVATE UFO</button></div>
+    <p class="tiny">Making a UFO takes <b>your</b> universe online (your credits, upgrades and planets). Joining someone rides in theirs — you still earn gems.</p>
+    <div class="row"><input id="on-code" class="codebox" maxlength="4" placeholder="CODE" autocomplete="off"><button id="on-join" class="gold">JOIN WITH CODE</button></div>
+    <p class="sub">Open UFOs <button id="on-ref" class="mini grey">↻</button></p>
+    <div id="rooms"></div>
+    <div class="row"><button class="back grey">BACK</button></div>
+  </div>
+</section>
+
+<!-- gem shop -->
+<section id="scr-shop" class="screen hidden">
+  <div class="card shop">
+    <div class="shoptop"><h2>SKINS &amp; PAINT</h2><span class="gems big">💎 <b id="s-gems">0</b></span></div>
+    <div class="seg" id="shop-tab"><button data-v="skins" class="on">GOOGLY SKINS</button><button data-v="hull">UFO PAINT</button></div>
+    <div id="shop-grid"></div>
+    <p class="tiny">You get gems for every planet your UFO paints — more for Guardians and for playing with friends.</p>
+    <div class="row"><button id="shop-close" class="big green">DONE</button></div>
+  </div>
+</section>
+
+<!-- the mothership: star map, upgrades, crew -->
+<div id="mother" class="hidden">
+  <div id="m-top">
+    <button id="m-prev" class="grey">◀</button>
+    <div class="mt"><small id="m-gal">MILKY GOOGLY · GALAXY 1</small><b id="m-sys">System</b><div id="m-prog"></div></div>
+    <button id="m-next" class="grey">▶</button>
+  </div>
+  <div id="m-credits" class="pill"><small>CREDITS</small><b id="m-cr">$0</b></div>
+  <div id="m-info" class="panel">
+    <div id="mi-body"></div>
+    <button id="m-go" class="big green wide">🛸 INVADE!</button>
+    <div id="m-wait" class="tiny hidden">Waiting for the captain to launch…</div>
+  </div>
+  <div id="m-side" class="panel">
+    <div class="seg" id="m-tab"><button data-v="upg" class="on">UPGRADES</button><button data-v="crew" id="m-tab-crew">CREW</button><button data-v="more">MORE</button></div>
+    <div id="m-upg"></div>
+    <div id="m-crew" class="hidden">
+      <div class="lobbytop"><div><small>UFO CODE</small><div id="lb-code" class="bigcode">----</div></div><div class="col"><button id="lb-copy" class="gold mini2">🔗 Copy invite</button><button id="lb-share" class="grey mini2 hidden">Share…</button></div></div>
+      <div class="label">SEATS</div>
+      <div id="lb-seats"></div>
+      <label class="chk" id="lb-pubrow"><input type="checkbox" id="lb-pub" disabled> Listed in public UFOs</label>
+      <div id="lb-chat"><div id="lb-log"></div><form id="lb-form"><input id="lb-msg" maxlength="140" placeholder="Say something… (Enter)" autocomplete="off"><button class="grey">Send</button></form></div>
+    </div>
+    <div id="m-more" class="hidden">
+      <div id="m-stats" class="summary"></div>
+      <div class="row"><button id="m-shop" class="gold">👽 SKINS &amp; UFO PAINT</button><button id="m-help" class="grey">? How to play</button></div>
+      <div class="row"><button id="m-reset" class="red mini2">Start a brand-new universe</button></div>
+      <div class="row"><button id="m-leave" class="grey">⏏ BACK TO TITLE</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- in-game HUD -->
+<div id="hud" class="hidden">
+  <div id="vign"></div>
+  <div id="flash"></div>
+  <div id="top" class="pill">
+    <small id="h-planet">PLANET</small>
+    <div id="covbar"><i id="cov-fill"></i><span id="cov-need"></span><b id="cov-t">0%</b></div>
+    <div id="bossbar" class="hidden"><small>GUARDIAN</small><div><i id="boss-fill"></i></div></div>
+  </div>
+  <div id="h-cash" class="pill"><small>CREDITS</small><b id="h-cr">$0</b><div id="h-earn"></div></div>
+  <div id="minimap" class="pill"><canvas id="mm" width="240" height="120"></canvas></div>
+  <div id="crew"></div>
+  <div id="vitals" class="pill">
+    <div class="bar sh" id="b-sh"><span>🔵</span><div><i></i></div><b></b></div>
+    <div class="bar" id="b-hp"><span>🛸</span><div><i></i></div><b></b></div>
+    <div class="bar paint" id="b-tank"><span>🎨</span><div><i></i></div><b></b></div>
+    <div id="abil"><div id="ab-bomb" class="ab"><span>💣</span><i></i><small class="kbonly">R-CLICK</small></div><div id="ab-beam" class="ab"><span>🛸</span><i></i><small class="kbonly">E</small></div><div id="ab-nuke" class="ab"><span>🌈</span><i></i><small class="kbonly">X</small></div></div>
+  </div>
+  <div id="role" class="pill"></div>
+  <div id="cross"><i></i><i></i><i></i><i></i><b></b></div>
+  <div id="hitm"></div>
+  <div id="pops"></div>
+  <div id="center"></div>
+  <div id="toast2"></div>
+  <div id="board" class="hidden"></div>
+  <div id="chatbox"><div id="log"></div><form id="chatform" class="hidden"><input id="chatin" maxlength="140" placeholder="Chat… (Enter to send, Esc to cancel)" autocomplete="off"></form></div>
+  <div id="keys" class="tiny kbonly"></div>
+  <div id="downscr" class="hidden"><div class="em">💥</div><h2>UFO DOWN!</h2><p id="down-p"></p></div>
+  <div id="saved">SAVED</div>
+  <!-- touch -->
+  <div id="stick" class="touch"><div id="knob"></div></div>
+  <button id="t-fire" class="touch tbtn green">PAINT</button>
+  <button id="t-bomb" class="touch tbtn red">BOMB</button>
+  <button id="t-beam" class="touch tbtn purple">BEAM</button>
+  <button id="t-nuke" class="touch tbtn gold">NUKE</button>
+  <button id="t-up" class="touch tbtn grey">▲</button>
+  <button id="t-down" class="touch tbtn grey">▼</button>
+  <button id="t-boost" class="touch tbtn blue">BOOST</button>
+  <div id="tbar" class="touch"><button id="t-board" class="grey" aria-label="Crew">🏆</button><button id="t-chat" class="grey" aria-label="Chat">💬</button><button id="t-menu" class="grey" aria-label="Menu">☰</button></div>
+</div>
+<div id="clickto" class="hidden"><div>CLICK TO FLY<small>(mouse steers and aims · Esc for menu)</small></div></div>
+<div id="loading" class="hidden"><div class="warp"></div><h2 id="load-t">ENTERING ORBIT…</h2><p id="load-s"></p></div>
+
+<!-- pause -->
+<section id="scr-pause" class="screen hidden">
+  <div class="card">
+    <h2>PAUSED</h2>
+    <p class="tiny" id="p-note"></p>
+    <label class="slider"><span class="kbonly">Mouse speed</span><span class="touchonly">Look speed</span> <input type="range" id="sens" min="0.2" max="3" step="0.05"></label>
+    <label class="chk"><input type="checkbox" id="invy"> Invert <span class="kbonly">mouse</span><span class="touchonly">look</span> Y</label>
+    <div class="vols"><label>♪ Music <input type="range" id="vol-music" min="0" max="1" step="0.05"></label><label>🔊 Effects <input type="range" id="vol-sfx" min="0" max="1" step="0.05"></label><label>🛸 Engine &amp; space <input type="range" id="vol-amb" min="0" max="1" step="0.05"></label></div>
+    <div class="row"><button id="p-music" class="grey">♪ Music</button><button id="p-sfx" class="grey">🔊 Sound</button><button id="p-fs" class="grey">⛶ Full screen</button><button id="p-help" class="grey">? Help</button></div>
+    <div class="row"><button id="p-resume" class="big green">RESUME</button></div>
+    <div class="row"><button id="p-retreat" class="gold">↩ BACK TO THE MOTHERSHIP<small>your paint on this planet is saved</small></button></div>
+    <div class="row"><button id="p-leave" class="red">⏏ QUIT TO TITLE</button></div>
+  </div>
+</section>
+
+<!-- conquered! -->
+<section id="scr-win" class="screen hidden">
+  <div class="card wide">
+    <div id="w-flag"></div>
+    <h2 id="w-title">PLANET CONQUERED!</h2>
+    <p id="w-sub" class="sub"></p>
+    <div id="w-take"></div>
+    <div id="w-list"></div>
+    <div id="w-extra" class="banner hidden"></div>
+    <p class="tiny" id="w-t"></p>
+  </div>
+</section>
+
+<!-- help -->
+<section id="scr-help" class="screen hidden">
+  <div class="card wide help">
+    <h2>HOW TO PLAY</h2>
+    <p><b>The mission:</b> you're a googly in a flying saucer. Every planet in the universe belongs to the local googlies — until you <b>cover it in paint</b>. Paint <b>70%</b> of a planet's surface and it's yours. There are <b>10 galaxies</b>, each with <b>5 star systems</b> of 3–5 planets, and the last planet of every system is guarded by a <b>Guardian</b> you have to beat too.</p>
+    <p><b>Flying:</b> <span class="kbonly"><b>W A S D</b> fly, the <b>mouse</b> steers and aims, <b>Space</b> climbs, <b>C</b> dives, <b>Shift</b> boosts.</span><span class="touchonly">the <b>stick</b> flies, drag on the right to steer and aim, <b>▲ ▼</b> climb and dive, <b>BOOST</b> goes fast.</span> Your UFO always hovers above the planet — you can't crash into it.</p>
+    <p><b>Painting:</b> <span class="kbonly"><b>Left click</b></span><span class="touchonly"><b>PAINT</b></span> shoots paint blobs where the crosshair points (they fall in a curve, like real paint). Each shot uses paint from your <b>tank</b>; it refills by itself. <span class="kbonly"><b>Right click</b></span><span class="touchonly"><b>BOMB</b></span> drops a giant <b>paint bomb</b> once you buy it. Fill the <b>Rainbow Nuke</b> meter by painting, then press <span class="kbonly"><b>X</b></span><span class="touchonly"><b>NUKE</b></span>.</p>
+    <p><b>The defenders:</b> <b>flak turrets</b> shoot at you from the ground, <b>fighter jets</b> chase you, <b>scrubbers</b> drive around <b>washing your paint off</b>, <b>storms</b> rain it away, and <b>shield domes</b> block paint until you break them. Paint hurts all of them. Blasted defenders drop <b>coins</b> — fly close to grab them.</p>
+    <p><b>Money:</b> you earn <b>credits</b> for every % painted, every defender, every coin, every googly you <b>abduct</b> with the <b>tractor beam</b> (hold <span class="kbonly"><b>E</b></span><span class="touchonly"><b>BEAM</b></span> over them), and a big bonus for each planet. Spend them at the <b>mothership</b> on upgrades: faster and bigger paint, more barrels, a bigger tank, armour, shields, engines, bombs, drones that paint for you, an auto-turret and the nuke.</p>
+    <p><b>With friends:</b> the UFO has <b>4 seats</b>. The pilot flies; the other three are gunners who aim their own paint cannons. There are no computer crew — the seats are for real people online. Your progress saves by itself every 30 seconds, and you can leave a planet and come back later: your paint stays.</p>
+    <p class="tiny kbonly">WASD fly · Mouse steer/aim · Space up · C down · Shift boost · Left click paint · Right click bomb · E (hold) tractor beam · X rainbow nuke · Scroll zoom · Tab crew · T chat · Esc menu</p>
+    <div class="row"><button class="back big green">GOT IT</button></div>
+  </div>
+</section>
+
+<div id="toast"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
