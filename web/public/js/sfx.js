@@ -434,6 +434,14 @@ export const sfx = {
   ouch() { if (!ctx) return; voice(null, 1, [[0, 600, 380, 0.13, 'o']], 0.07); },
   lowHull() { if (!ctx) return; const t = now(); tone(660, t, 0.12, { type: 'square', vol: 0.04 }); tone(440, t + 0.14, 0.12, { type: 'square', vol: 0.04 }); },
   spawn() { if (!ctx) return; const t = now(); tone(500, t, 0.2, { type: 'sawtooth', vol: 0.03, slide: 2 }); },
+  pickup(k) { if (!ctx) return; const t = now(); tone(600, t, 0.35, { type: 'sine', vol: 0.12, slide: 3, send: 0.4 }); [72, 79, 84, 91].forEach((m, i) => INST.glass(m + (k === 'cash' ? 2 : 0), t + i * 0.05, 0.3, 0.45, sfxBus)); noise(t, 0.2, { f: 6000, q: 2, vol: 0.08, slide: 0.5 }); },
+  meteorIn(pos) { if (!ctx) return; const t = now(), o = at(pos, 1.4, 40); noise(t, 1.6, { f: 300, q: 0.7, vol: 0.18, slide: 3, out: o, attack: 0.6, curve: 'lin' }); tone(200, t, 1.5, { type: 'sawtooth', vol: 0.03, slide: 0.4, out: o, attack: 0.5, curve: 'lin' }); },
+  meteorSmash(pos) { if (!ctx) return; sfx.boom(pos, 1.2); sfx.splat(pos, true); const t = now(); [76, 81, 86].forEach((m, i) => INST.glass(m, t + 0.1 + i * 0.06, 0.3, 0.3, sfxBus)); },
+  mission() { if (!ctx) return; const t = now(); [67, 71, 74, 79].forEach((m, i) => INST.brass(m, t + i * 0.09, i === 3 ? 0.6 : 0.12, 0.35, sfxBus)); DRUM.tim(t + 0.3, 0.8, sfxBus); sfx.coin(5); },
+  combo(n) { if (!ctx) return; const t = now(); tone(midi(72 + Math.min(24, n)), t, 0.15, { type: 'square', vol: 0.05, send: 0.3 }); tone(midi(79 + Math.min(24, n)), t + 0.07, 0.25, { type: 'square', vol: 0.05, send: 0.3 }); },
+  comboLost() { if (!ctx) return; const t = now(); tone(500, t, 0.4, { type: 'triangle', vol: 0.06, slide: 0.4 }); },
+  alert() { if (!ctx) return; const t = now(); for (let i = 0; i < 3; i++) { tone(880, t + i * 0.22, 0.1, { type: 'square', vol: 0.05 }); tone(1320, t + i * 0.22 + 0.1, 0.1, { type: 'square', vol: 0.05 }); } DRUM.taiko(t, 0.8, sfxBus); },
+  gold() { if (!ctx) return; const t = now(); [84, 88, 91, 96, 100, 103].forEach((m, i) => INST.bell(m, t + i * 0.07, 1, 0.3, sfxBus)); sfx.coin(8); },
 };
 
 // ------------------------------------------------------------------ ?audiotest=1: render every sound offline and measure it

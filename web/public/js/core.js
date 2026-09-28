@@ -127,6 +127,7 @@ export class Room {
       ship: { p: mul(START_DIR, R + 17), f: nrm(tangent([0, 0, -1], START_DIR)), v: [0, 0, 0], hp: S.hull, sh: S.shield, down: 0, beam: false, nuke: 0, hitT: 9 },
       turrets: [], fighters: [], scrubbers: [], shields: [], storms: [], natives: [], boss: null, bossDead: !pl.boss || !!part?.bd,
       shots: [], eshots: [], coins: [], droneT: [], turretT: 0, lastPct: 0,
+      powerups: [], meteors: [], buffs: { rapid: 0, rainbow: 0, cash: 0 }, combo: 0, comboT: 0, puT: 10, eventT: 55, event: null, missions: [], aces: 0,
     };
     if (part?.c) part.c.forEach((c, i) => { if (i && c) run.colors[i] = c; });
     for (const q of this.players.values()) { run.colors[q.seat + 1] = q.color; q.tank = S.tank; q.bombCd = 0; q.fire = false; q.fireT = 0; q.stats = { splats: 0, kills: 0, abducted: 0, earned: 0, cells: 0 }; }
@@ -152,6 +153,7 @@ export class Room {
       const E = ENEMY.boss(d), hp = E.hp * hpK;
       run.boss = { p: mul(spot(1.0), R + 46), hp: part?.bh ? hp * part.bh : hp, max: hp, cd: 4, pat: 0, spin: 0, summonT: 30, dmg: E.dmg };
     }
+    run.missions = this.makeMissions(pl);
     this.rebuildShieldMask();
     this.phase = 'planet';
     this.camp.cur = key;
@@ -166,7 +168,7 @@ export class Room {
     return {
       t: 'planet', key: r.key, grid: rle(r.grid), colors: r.colors, ship: { p: r.ship.p, f: r.ship.f, hp: r.ship.hp, sh: r.ship.sh },
       turrets: r.turrets.map(t => ({ id: t.id, d: t.d.map(r3), hp: t.hp / t.max })), shields: r.shields.map(s => ({ id: s.id, d: s.d.map(r3), a: s.a, hp: s.hp / s.max })),
-      boss: r.boss ? { hp: r.boss.hp / r.boss.max } : null, bossDead: r.bossDead, cov: r.paintedW / CELL_WSUM, stats: this.stats(),
+      boss: r.boss ? { hp: r.boss.hp / r.boss.max } : null, bossDead: r.bossDead, cov: r.paintedW / CELL_WSUM, stats: this.stats(), missions: r.missions.map(m => ({ k: m.k, text: m.text, n: m.n, got: m.got, done: m.done, reward: m.reward })),
     };
   }
   rebuildShieldMask() {
@@ -174,6 +176,7 @@ export class Room {
     for (const s of r.shields) forCells(s.d, s.a, k => { r.shieldMask[k] = 1; });
   }
   earn(v, why = '', p = null, who = null, quiet = false) {
+    if (this.run?.buffs.cash > 0) v *= 2;
     v = Math.round(v); if (v <= 0) return;
     this.camp.credits += v; this.camp.stats.earned += v; if (this.run) this.run.earned += v;
     if (who) who.stats.earned += v;
@@ -195,14 +198,15 @@ export class Room {
   fireSeat(p) {
     const S = this.stats(), r = this.run;
     const cost = 3 * (1 + 0.5 * (S.barrels - 1));
-    if (p.tank < cost) { if (!p.dryT || r.t - p.dryT > 1.2) { p.dryT = r.t; this.send(p, { t: 'dry' }); } return false; }
-    p.tank -= cost;
+    const rapid = r.buffs.rapid > 0;
+    if (!rapid && p.tank < cost) { if (!p.dryT || r.t - p.dryT > 1.2) { p.dryT = r.t; this.send(p, { t: 'dry' }); } return false; }
+    if (!rapid) p.tank -= cost;
     const o = this.seatOrigin(p.seat), d = p.aim, up = nrm(r.ship.p), rt = nrm(cross(d, up)), vu = cross(rt, d);
     for (let b = 0; b < S.barrels; b++) {
       const off = S.barrels === 1 ? 0 : (b / (S.barrels - 1) - 0.5) * 0.12 * Math.min(1, S.barrels / 3);
       const jit = (Math.random() - 0.5) * 0.012;
       const dir = nrm(add(add(d, rt, off + jit), vu, (Math.random() - 0.5) * 0.012));
-      this.shoot(add(o, rt, off * 6), add(mul(dir, SHOT_SPEED), r.ship.v, 0.6), 'paint', p.seat + 1, S.dmg, S.splat / r.R, true, p);
+      this.shoot(add(o, rt, off * 6), add(mul(dir, SHOT_SPEED), r.ship.v, 0.6), 'paint', p.seat + 1, S.dmg, S.splat * (r.buffs.rainbow > 0 ? 1.6 : 1) / r.R, true, p);
     }
     p.stats.splats++; this.camp.stats.splats++;
     return true;
@@ -232,7 +236,7 @@ export class Room {
     if (who) who.stats.cells += n;
     const S = this.stats();
     if (S.nuke && gained) r.ship.nuke = Math.min(1, r.ship.nuke + gained / CELL_WSUM * 2.4 * S.nuke.charge);
-    this.bcast({ t: 'splat', d: d.map(r3), a: r3(a), s: slot, n: nuke ? 1 : 0 });
+    this.bcast({ t: 'splat', d: d.map(r3), a: r3(a), s: slot, n: nuke ? 1 : 0, rb: r.buffs.rainbow > 0 ? 1 : 0 });
     const pct = Math.floor(r.paintedW / CELL_WSUM * 100);
     if (pct > r.maxPct) { const gain = pct - r.maxPct; r.maxPct = pct; this.earn(PAY.percent(r.pl.L) * gain, gain > 1 ? `+${gain}% painted` : '', null, who); }
   }
@@ -248,7 +252,7 @@ export class Room {
     if (nuke) { for (const f of r.fighters) if (f.alive && dist(f.p, pos) < rad * 1.2 + 40) this.hurt(f, 'fighter', dmg, who); for (const s of r.shields) if (dist(mul(s.d, R), pos) < rad + s.a * R) this.hurt(s, 'shield', dmg, who); if (r.boss && dist(r.boss.p, pos) < rad + 70) this.hurt(r.boss, 'boss', dmg * 0.25, who); }
   }
   coinBurst(pos, total, n) {
-    const r = this.run; n = Math.max(1, Math.min(12, n));
+    const r = this.run; n = Math.max(1, Math.min(12, n)); total *= this.comboMult();
     const up = nrm(pos);
     for (let i = 0; i < n; i++) { const id = this.nextId++; const v = add(mul(up, 8 + Math.random() * 10), randDir(Math.random), 10); r.coins.push({ id, p: add(pos, up, 2), v, val: total / n, life: 0 }); }
   }
@@ -260,9 +264,10 @@ export class Room {
     if (e.hp > 0) { this.bcast({ t: 'hit', k: kind, id: e.id ?? 'boss', hp: r3(e.hp / e.max) }); return; }
     this.bcast({ t: 'boom', k: kind, id: e.id ?? 'boss', p: pos.map(r2) });
     if (who) who.stats.kills++; this.camp.stats.kills++;
+    this.bumpCombo(); this.mission(kind);
     if (kind === 'turret') { r.turrets = r.turrets.filter(t => t !== e); this.coinBurst(pos, PAY.turret(L), 5); }
     if (kind === 'scrubber') { e.respawn = 38; this.coinBurst(pos, PAY.scrubber(L), 6); }
-    if (kind === 'fighter') { e.alive = false; e.respawn = 24; this.coinBurst(pos, PAY.fighter(L), 4); }
+    if (kind === 'fighter') { e.alive = false; e.respawn = 24; if (e.ace) { e.respawn = 1e9; this.coinBurst(pos, PAY.fighter(L) * 14, 12); this.toast('ACE SHOT DOWN — bounty paid!', 'big'); this.bcast({ t: 'event', k: 'aceDown' }); } else this.coinBurst(pos, PAY.fighter(L), 4); }
     if (kind === 'shield') { r.shields = r.shields.filter(s => s !== e); this.rebuildShieldMask(); this.coinBurst(pos, PAY.shield(L), 8); this.toast('Shield dome destroyed — that area can be painted now!'); }
     if (kind === 'boss') { r.boss = null; r.bossDead = true; this.camp.stats.bosses++; this.coinBurst(pos, PAY.boss(L), 12); this.toast(`THE GUARDIAN IS DOWN!`, 'big'); }
   }
@@ -344,7 +349,7 @@ export class Room {
     for (const p of this.players.values()) {
       p.tank = Math.min(S.tank, p.tank + S.pump * dt); p.bombCd = Math.max(0, p.bombCd - dt);
       p.fireT -= dt;
-      if (p.fire && s.down <= 0 && !(p.id === this.pilot && s.beam)) { while (p.fireT <= 0) { if (!this.fireSeat(p)) { p.fireT = 0.15; break; } p.fireT += 1 / S.rate; } }
+      if (p.fire && s.down <= 0 && !(p.id === this.pilot && s.beam)) { while (p.fireT <= 0) { if (!this.fireSeat(p)) { p.fireT = 0.15; break; } p.fireT += 1 / (S.rate * (r.buffs.rapid > 0 ? 2 : 1)); } }
       if (p.fireT < 0) p.fireT = 0;
     }
     // drones paint unpainted ground near the saucer
@@ -454,8 +459,10 @@ export class Room {
           n.st = 2; n.respawn = 25;
           const pl = this.players.get(this.pilot);
           if (pl) pl.stats.abducted++; this.camp.stats.abducted++;
-          this.bcast({ t: 'abduct', id: n.id });
-          this.earn(PAY.native(L) * S.beam.mult, 'googly abducted', s.p, pl);
+          this.bcast({ t: 'abduct', id: n.id, gold: n.gold ? 1 : 0 });
+          this.bumpCombo(); this.mission('abduct');
+          if (n.gold) { n.gold = false; this.mission('gold'); this.earn(PAY.native(L) * S.beam.mult * 30 * this.comboMult(), 'THE GOLDEN GOOGLY!', s.p, pl); this.toast('You abducted the GOLDEN GOOGLY!', 'big'); }
+          else this.earn(PAY.native(L) * S.beam.mult * this.comboMult(), 'googly abducted', s.p, pl);
         }
       }
     }
@@ -489,12 +496,120 @@ export class Room {
       if (c.life > 40) c.done = true;
     }
     r.coins = r.coins.filter(x => !x.done);
+    this.tickExtras(dt);
     // conquered?
     if (r.paintedW / CELL_WSUM >= r.pl.need && r.bossDead) return this.conquer();
     // snapshots and the host's autosave (online)
     this.snapT -= dt;
     if (this.snapT <= 0) { this.snapT += SNAP_EVERY; this.snap(); }
     if (!this.solo) { this.saveT += dt; if (this.saveT > 30) { this.saveT = 0; this.pushSave(); } }
+  }
+  // ---------------------------------------------------------------- combos, missions, power-ups and events
+  comboMult() { return 1 + Math.min(20, this.run?.combo || 0) * 0.1; }
+  bumpCombo() { const r = this.run; r.combo++; r.comboT = 7; if (r.combo >= 3 && r.combo % 5 === 0) this.bcast({ t: 'combo', n: r.combo }); }
+  makeMissions(pl) {
+    const L = pl.L, g = pl.g, rr = rng(pl.seed ^ ((this.camp.stats.planets + 1) * 7919)), all = [];
+    all.push({ k: 'abduct', n: 4 + g, text: n => `Abduct ${n} googlies with the beam` });
+    if (pl.def.turrets >= 3) all.push({ k: 'turret', n: Math.min(pl.def.turrets, 3 + Math.floor(g / 2)), text: n => `Knock out ${n} flak turrets` });
+    if (pl.def.scrubbers >= 1) all.push({ k: 'scrubber', n: Math.min(3 + g, 2 + pl.def.scrubbers), text: n => `Stop ${n} paint scrubbers` });
+    if (pl.def.fighters >= 1) all.push({ k: 'fighter', n: 3 + g, text: n => `Shoot down ${n} fighter jets` });
+    all.push({ k: 'power', n: 3, text: n => `Grab ${n} power-ups` });
+    all.push({ k: 'meteor', n: 4, text: n => `Blast ${n} paint meteors` });
+    all.push({ k: 'speed', n: 25, text: n => `Paint ${n}% within 3 minutes` });
+    all.push({ k: 'combo', n: 8 + g, text: n => `Build a ×${(1 + (n) * 0.1).toFixed(1)} combo (${n} in a row)` });
+    for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(rr() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
+    return all.slice(0, 3).map(m => ({ k: m.k, n: m.n, got: 0, done: false, text: m.text(m.n), reward: Math.round(PAY.turret(L) * 9 / 10) * 10 }));
+  }
+  mission(k, amount = 1) {
+    const r = this.run; if (!r) return;
+    for (let i = 0; i < r.missions.length; i++) {
+      const m = r.missions[i]; if (m.done || m.k !== k) continue;
+      const was = m.got;
+      m.got = k === 'combo' || k === 'speed' ? Math.max(m.got, amount) : m.got + amount;
+      if (m.got === was) continue;
+      if (m.got >= m.n) { m.done = true; m.got = m.n; this.earn(m.reward, 'mission complete!', r.ship.p); this.bcast({ t: 'mission', i, done: 1, got: m.got, text: m.text, reward: m.reward }); }
+      else this.bcast({ t: 'mission', i, done: 0, got: m.got });
+    }
+  }
+  spawnPowerup(near, k) {
+    const r = this.run, R = r.R, up = nrm(near);
+    const KS = ['rapid', 'rainbow', 'repair', 'cash', 'bomb', 'nuke'];
+    k = k || KS[Math.floor(Math.random() * (this.stats().nuke ? 6 : 5))];
+    const d = around(up, (40 + Math.random() * 90) / R, Math.random() * 6.28);
+    const u = { id: this.nextId++, k, p: mul(d, R + 10 + Math.random() * 12), life: 0 };
+    r.powerups.push(u);
+    return u;
+  }
+  pickup(u) {
+    const r = this.run, S = this.stats(), s = r.ship;
+    u.done = true;
+    if (u.k === 'rapid') r.buffs.rapid = 10;
+    if (u.k === 'rainbow') r.buffs.rainbow = 12;
+    if (u.k === 'cash') r.buffs.cash = 15;
+    if (u.k === 'repair') { s.hp = Math.min(S.hull, s.hp + S.hull * 0.5); s.sh = S.shield; }
+    if (u.k === 'bomb') for (const p of this.players.values()) { p.bombCd = 0; p.tank = S.tank; }
+    if (u.k === 'nuke') s.nuke = Math.min(1, s.nuke + 0.5);
+    this.bcast({ t: 'pickup', id: u.id, k: u.k, hp: r2(s.hp), sh: r2(s.sh) });
+    this.bumpCombo(); this.mission('power');
+  }
+  smashMeteor(m, slot, who) {
+    const r = this.run, d = nrm(m.p);
+    m.done = true;
+    this.bcast({ t: 'meteor', id: m.id, p: m.p.map(r2), hit: 1 });
+    this.paint(d, 26 / r.R, slot, who);
+    this.coinBurst(mul(d, r.R + 6), PAY.fighter(r.pl.L) * 0.8, 3);
+    this.bumpCombo(); this.mission('meteor');
+  }
+  startEvent(force = null) {
+    const r = this.run, s = r.ship, up = nrm(s.p), R = r.R;
+    const opts = ['meteors', 'gold', 'drop'];
+    if (r.pl.d >= 2 && r.aces < 2) opts.push('ace', 'ace');
+    const k = force || opts[Math.floor(Math.random() * opts.length)];
+    if (k === 'meteors') { r.event = { k, t: 22, spawnT: 0 }; this.toast('☄️ PAINT METEOR SHOWER! Shoot them for giant splats', 'big'); }
+    if (k === 'gold') {
+      const n = r.natives.filter(q => q.st === 0).sort((a, b) => Math.abs(dot(a.d, up) - 0.2) - Math.abs(dot(b.d, up) - 0.2))[0];
+      if (n) { n.gold = true; r.event = { k, t: 60 }; this.toast('✨ A GOLDEN GOOGLY appeared! Beam it up (it\'s on the map)', 'big'); }
+    }
+    if (k === 'drop') { for (let i = 0; i < 3; i++) this.spawnPowerup(s.p); r.event = { k, t: 6 }; this.toast('📦 SUPPLY DROP from the mothership — grab the power-ups!'); }
+    if (k === 'ace') {
+      const E = ENEMY.fighter(r.pl.d), hpK = 1 + 0.3 * (this.players.size - 1);
+      const f = { id: 'ace' + r.aces++, p: mul(around(up, 1.1, Math.random() * 6.28), R + 30), v: [0, 0, 0], hp: E.hp * hpK * 9, max: E.hp * hpK * 9, cd: 2, respawn: 0, alive: true, E: { ...E, speed: E.speed * 1.35, every: E.every * 0.5, dmg: E.dmg * 1.4 }, orb: Math.random() * 6, ace: true };
+      r.fighters.push(f); r.event = { k, t: 45 };
+      this.toast('🎯 BOUNTY: an ACE fighter is hunting you — shoot it down for a huge reward!', 'big');
+    }
+    this.bcast({ t: 'event', k });
+  }
+  tickExtras(dt) {
+    const r = this.run, s = r.ship, R = r.R, up = nrm(s.p);
+    for (const k in r.buffs) r.buffs[k] = Math.max(0, r.buffs[k] - dt);
+    if (r.combo) { r.comboT -= dt; if (r.comboT <= 0) { if (r.combo >= 5) this.bcast({ t: 'combo', n: 0, was: r.combo }); r.combo = 0; } else this.mission('combo', r.combo); }
+    this.mission('speed', r.t < 180 ? Math.floor(r.paintedW / CELL_WSUM * 100) : 0);
+    // power-ups float a little way ahead; fly through them
+    r.puT -= dt;
+    if (r.puT <= 0) { r.puT = 16 + Math.random() * 10; if (r.powerups.length < 3) this.spawnPowerup(add(s.p, s.f, 60)); }
+    for (const u of r.powerups) { u.life += dt; if (s.down <= 0 && dist(u.p, s.p) < 9) this.pickup(u); else if (u.life > 45) { u.done = true; this.bcast({ t: 'pickup', id: u.id, gone: 1 }); } }
+    r.powerups = r.powerups.filter(u => !u.done);
+    // random events
+    if (!r.event) { r.eventT -= dt; if (r.eventT <= 0 && !this.nearConquered()) { r.eventT = 60 + Math.random() * 45; this.startEvent(); } }
+    else {
+      const e = r.event; e.t -= dt;
+      if (e.k === 'meteors') { e.spawnT -= dt; if (e.spawnT <= 0) { e.spawnT = 0.9 + Math.random() * 0.7; const tgt = mul(around(up, (20 + Math.random() * 120) / R, Math.random() * 6.28), R); const o = add(tgt, nrm(add(nrm(tgt), randDir(Math.random), 0.5)), 150); r.meteors.push({ id: this.nextId++, p: o, v: mul(nrm(sub(tgt, o)), 42 + Math.random() * 15) }); } }
+      if (e.k === 'gold' && !r.natives.some(n => n.gold)) e.t = 0;
+      if (e.k === 'ace' && !r.fighters.some(f => f.ace && f.alive)) e.t = 0;
+      if (e.t <= 0) {
+        if (e.k === 'gold') { for (const n of r.natives) if (n.gold) { n.gold = false; this.bcast({ t: 'event', k: 'goldGone' }); } }
+        if (e.k === 'ace') for (const f of r.fighters) if (f.ace && f.alive) { f.alive = false; f.respawn = 1e9; this.bcast({ t: 'boom', k: 'fighter', id: f.id, p: f.p.map(r2), quiet: 1 }); this.toast('The ace flew off…'); }
+        r.event = null;
+      }
+    }
+    // meteors: shoot them before they land and wash your paint off
+    for (const m of r.meteors) {
+      if (m.done) continue;
+      m.p = add(m.p, m.v, dt);
+      if (s.down <= 0 && dist(m.p, s.p) < SHIP_R + 4) { m.done = true; this.damageShip(ENEMY.turret(r.pl.d).dmg * 2); this.bcast({ t: 'meteor', id: m.id, p: m.p.map(r2), ship: 1 }); }
+      else if (len(m.p) <= R) { m.done = true; this.erase(nrm(m.p), 16 / R); this.bcast({ t: 'meteor', id: m.id, p: m.p.map(r2), ground: 1 }); }
+    }
+    r.meteors = r.meteors.filter(m => !m.done);
   }
   shielded(d) { for (const s of this.run.shields) if (dot(d, s.d) > Math.cos(s.a)) return true; return false; }
   nearConquered() { const r = this.run; return r.paintedW / CELL_WSUM > r.pl.need - 0.02 && r.bossDead; }
@@ -504,6 +619,7 @@ export class Room {
     for (const t of r.turrets) if (dist(sh.p, mul(t.d, R + 1.4)) < 2.8) { sh.done = true; this.bcast({ t: 'pop', id: sh.id, p: sh.p.map(r2), s: sh.slot }); this.hurt(t, 'turret', sh.dmg, who); if (sh.k === 'bomb') this.land(sh); return; }
     for (const c of r.scrubbers) if (c.respawn <= 0 && dist(sh.p, mul(c.d, R + 1.2)) < 2.8) { sh.done = true; this.bcast({ t: 'pop', id: sh.id, p: sh.p.map(r2), s: sh.slot }); this.hurt(c, 'scrubber', sh.dmg, who); if (sh.k === 'bomb') this.land(sh); return; }
     for (const f of r.fighters) if (f.alive && dist(sh.p, f.p) < 3) { sh.done = true; this.bcast({ t: 'pop', id: sh.id, p: sh.p.map(r2), s: sh.slot }); this.hurt(f, 'fighter', sh.dmg, who); return; }
+    for (const m of r.meteors) if (!m.done && dist(sh.p, m.p) < 5.5) { sh.done = true; this.bcast({ t: 'pop', id: sh.id, p: sh.p.map(r2), s: sh.slot }); this.smashMeteor(m, sh.slot || (this.players.get(this.pilot)?.seat + 1) || 1, who); return; }
     if (r.boss && dist(sh.p, r.boss.p) < 16) { sh.done = true; this.bcast({ t: 'pop', id: sh.id, p: sh.p.map(r2), s: sh.slot }); this.hurt(r.boss, 'boss', sh.dmg, who); return; }
     if (len(sh.p) <= R) { sh.done = true; this.land(sh); }
   }
@@ -520,9 +636,12 @@ export class Room {
       t: 'snap', tm: r2(r.t),
       s: [...s.p.map(r2), ...s.f.map(r3), r2(s.hp), r2(s.sh), r2(Math.max(0, s.down)), s.beam ? 1 : 0, r3(s.nuke)],
       a: this.humans().map(p => [p.id, ...p.aim.map(r3), p.fire ? 1 : 0, Math.round(p.tank), r2(p.bombCd)]),
-      f: r.fighters.filter(f => f.alive).map(f => [f.id, ...f.p.map(r2), ...f.v.map(r2), r2(f.hp / f.max)]),
+      f: r.fighters.filter(f => f.alive).map(f => [f.id, ...f.p.map(r2), ...f.v.map(r2), r2(f.hp / f.max), f.ace ? 1 : 0]),
       c: r.scrubbers.filter(c => c.respawn <= 0).map(c => [c.id, ...c.d.map(r3), ...c.h.map(r3), r2(c.hp / c.max)]),
-      n: r.natives.filter(n => n.st < 2).map(n => [n.id, ...n.d.map(r3), ...n.h.map(r3), r2(n.lift), n.st]),
+      n: r.natives.filter(n => n.st < 2).map(n => [n.id, ...n.d.map(r3), ...n.h.map(r3), r2(n.lift), n.st, n.gold ? 1 : 0]),
+      u: r.powerups.map(u => [u.id, ...u.p.map(r2), u.k]),
+      m: r.meteors.map(m => [m.id, ...m.p.map(r2), ...m.v.map(r2)]),
+      bf: [r2(r.buffs.rapid), r2(r.buffs.rainbow), r2(r.buffs.cash)], cb: r.combo, cbT: r2(r.comboT), ev: r.event ? [r.event.k, r2(r.event.t)] : 0,
       w: r.storms.map(w => [w.id, ...w.d.map(r3)]),
       b: r.boss ? [...r.boss.p.map(r2), r3(r.boss.hp / r.boss.max), r2(r.boss.spin)] : 0,
       o: r.coins.map(c => [c.id, ...c.p.map(r2)]),

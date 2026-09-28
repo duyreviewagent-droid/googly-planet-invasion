@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { Space } from './space.js';
 import { buildPlanet, miniPlanet, SUN, surfaceCanvases } from './planet.js';
-import { UFO, Native, makeTurret, makeFighter, makeScrubber, makeShieldDome, makeStorm, makeGuardian, makeCoin, makeFlag } from './models.js';
+import { UFO, Native, makeTurret, makeFighter, makeScrubber, makeShieldDome, makeStorm, makeGuardian, makeCoin, makeFlag, makePowerup, makeMeteor, goldify, acify, POWER } from './models.js';
 import { SKINS } from './googly.js';
 import { Room, newPlayer, SHOT_SPEED, GRAV, ALT_MIN, ALT_MAX } from './core.js';
 import { GALAXIES, SYSTEMS, TYPES, system, planetByKey, UPGRADES, UPG, upgCost, shipStats, planetOpen, systemOpen, progress, frontier, cleanCampaign, GW, GH, forCells, unrle, dirToUT } from './universe.js';
@@ -509,7 +509,8 @@ function buildRun(m, pl) {
   const cv = surfaceCanvases({ ...pl }, 256); mmBase.getContext('2d').drawImage(cv.col, 0, 0, 240, 120);
   run = {
     pl, R: pl.R, P, grid, colors: m.colors, cov: m.cov, boss: null, bossHp: m.boss?.hp ?? 0, bossDead: m.bossDead, mmBase, t: 0,
-    turrets: new Map(), shields: new Map(), fighters: new Map(), scrubbers: new Map(), natives: new Map(), storms: new Map(), coins: new Map(), shots: new Map(), eshots: new Map(),
+    turrets: new Map(), shields: new Map(), fighters: new Map(), scrubbers: new Map(), natives: new Map(), storms: new Map(), coins: new Map(), shots: new Map(), eshots: new Map(), powerups: new Map(), meteors: new Map(),
+    missions: m.missions || [], buffs: [0, 0, 0], combo: 0, comboT: 0,
     ship: { p: new THREE.Vector3(...m.ship.p), f: new THREE.Vector3(...m.ship.f), v: new THREE.Vector3(), hp: m.ship.hp, sh: m.ship.sh, down: 0, beam: false, nuke: 0, tp: new THREE.Vector3(...m.ship.p), tf: new THREE.Vector3(...m.ship.f), lastSnapP: null, estV: new THREE.Vector3() },
     alt: new THREE.Vector3(...m.ship.p).length() - pl.R, tank: m.stats.tank, bombCd: 0, earned: 0, aims: [], firing: [], shake: 0, flags: [], lastPct: Math.floor(m.cov * 100), mmT: 0, sendT: 0,
   };
@@ -527,14 +528,14 @@ function buildRun(m, pl) {
   camPitch = -0.62; camYaw = 0; zoom = 19;
   music.play(pl.boss && !m.bossDead ? 'boss' : ['invade1', 'invade2', 'invade3'][(pl.p + pl.s) % 3]);
   if (pl.boss && !m.bossDead) setTimeout(() => { sfx.bossAlert(); center('☠ THE GUARDIAN', 'It guards this system. Paint it until it pops!', 3200); }, 1400);
-  drawHudCrew();
+  drawHudCrew(); drawMissions();
   if (!mobile && !Q.has('shot')) $('clickto').classList.remove('hidden');
   if (Q.has('dbg')) console.log('planet built in', Math.round(performance.now() - t0), 'ms');
 }
 function leavePlanet() {
   if (!run) return;
   run.P.dispose(); planetG.remove(run.P.group);
-  for (const k of ['turrets', 'shields', 'fighters', 'scrubbers', 'natives', 'storms', 'coins', 'shots', 'eshots']) for (const e of run[k].values()) planetG.remove(e.o || e.mesh || e.g?.group || e.n?.group);
+  for (const k of ['turrets', 'shields', 'fighters', 'scrubbers', 'natives', 'storms', 'coins', 'shots', 'eshots', 'powerups', 'meteors']) for (const e of run[k].values()) planetG.remove(e.o || e.mesh || e.g?.group || e.n?.group);
   if (run.boss) planetG.remove(run.boss.o);
   for (const f of run.flags) planetG.remove(f);
   for (const p of parts) p.life = 0;
@@ -556,7 +557,8 @@ function runMsg(m) {
       run.cov = m.cov; C.camp.credits = m.cr;
       run.aims = []; run.firing = [];
       for (const a of m.a) { const p = C.players.find(q => q.id === a[0]); if (!p) continue; run.aims[p.seat] = new THREE.Vector3(a[1], a[2], a[3]); run.firing[p.seat] = !!a[4]; if (a[0] === C.id) { run.tank = a[5]; run.bombCd = a[6]; } }
-      syncFighters(m.f); syncScrubbers(m.c); syncNatives(m.n); syncStorms(m.w); syncCoins(m.o);
+      syncFighters(m.f); syncScrubbers(m.c); syncNatives(m.n); syncStorms(m.w); syncCoins(m.o); syncPowerups(m.u || []); syncMeteors(m.m || []);
+      run.buffs = m.bf || [0, 0, 0]; if (m.cb !== run.combo) { if (m.cb > run.combo) { $('combo').classList.remove('pop'); void $('combo').offsetWidth; $('combo').classList.add('pop'); if (m.cb >= 2) sfx.combo(m.cb); } run.combo = m.cb; } run.comboT = m.cbT || 0;
       if (run.boss) { if (m.b) { run.boss.tp.set(m.b[0], m.b[1], m.b[2]); if (!run.boss.p) run.boss.p = run.boss.tp.clone(); run.boss.hp = m.b[3]; run.boss.spin = m.b[4]; run.boss.o.visible = true; } }
       const pct = Math.floor(m.cov * 100);
       if (pct > run.lastPct && pct % 10 === 0) { sfx.percent(); note(`🎨 ${pct}% painted${pct >= run.pl.need * 100 && run.boss ? ' — now beat the Guardian!' : ''}`); }
@@ -581,7 +583,7 @@ function runMsg(m) {
       break;
     }
     case 'splat': {
-      const d = m.d, col = run.colors[m.s] || '#7bd13b', big = m.a * R > 10 || m.n;
+      const d = m.d, big = m.a * R > 30 || m.n, col = m.rb ? '#' + new THREE.Color().setHSL(Math.random(), 1, 0.55).getHexString() : run.colors[m.s] || '#7bd13b';
       run.P.paint.splat(d, m.a, col, (d[0] * 1e5 ^ d[2] * 1e5) | 0, big);
       forCells(d, m.a, k => { run.grid[k] = m.s; });
       const wp = V1.set(d[0], d[1], d[2]).multiplyScalar(R);
@@ -640,7 +642,7 @@ function runMsg(m) {
     case 'up': sfx.up(); $('downscr').classList.add('hidden'); center('BACK IN ACTION!', '', 1400); break;
     case 'cash': popCash(m.v, m.why, m.p); break;
     case 'coin': { const c = run.coins.get(m.id); if (c) { planetG.remove(c.o); run.coins.delete(m.id); } sfx.coin(1); run.earned += m.v; popCash(m.v, '', null, true); break; }
-    case 'abduct': { const n = run.natives.get(m.id); if (n) { planetG.remove(n.n.group); run.natives.delete(m.id); } sfx.abduct(run.ship.p.toArray(), m.id); burst(run.ship.p.clone().addScaledVector(run.ship.p.clone().normalize(), -1.5), '#b8ffb0', 16, 8); break; }
+    case 'abduct': { const n = run.natives.get(m.id); if (n) { planetG.remove(n.n.group); run.natives.delete(m.id); } if (m.gold) { sfx.gold(); center('✨ GOLDEN GOOGLY!', 'huge payday', 2200); burst(run.ship.p, '#ffd23a', 60, 18); } sfx.abduct(run.ship.p.toArray(), m.id); burst(run.ship.p.clone().addScaledVector(run.ship.p.clone().normalize(), -1.5), '#b8ffb0', 16, 8); break; }
     case 'nuke': {
       sfx.nuke(); flashV('#ffffff', 1); run.shake = 1.2;
       const d = new THREE.Vector3(...m.d).multiplyScalar(R);
@@ -651,12 +653,43 @@ function runMsg(m) {
     case 'spawn': if (m.k === 'fighter' && Math.random() < 0.5) note('✈️ Enemy fighters incoming!', 1800); break;
     case 'dry': sfx.dry(); $('cross').classList.add('dry'); setTimeout(() => $('cross').classList.remove('dry'), 400); if ((run.dryN = (run.dryN || 0) + 1) <= 3) note('🎨 Out of paint — the tank refills by itself (upgrade the Paint Pump!)', 2200); break;
     case 'cd': run.bombCd = m.bomb; break;
+    case 'pickup': {
+      const u = run.powerups.get(m.id); if (u) { planetG.remove(u.o); run.powerups.delete(m.id); }
+      if (m.gone) break;
+      const P = POWER[m.k]; sfx.pickup(m.k); run.ship.hp = m.hp; run.ship.sh = m.sh;
+      if (u) burst(u.p, '#' + new THREE.Color(P.color).getHexString(), 30, 14);
+      center(`${P.icon} ${P.name}`, P.line, 1600); flashV('#' + new THREE.Color(P.color).getHexString(), 0.4);
+      if (m.k === 'bomb') run.bombCd = 0;
+      break;
+    }
+    case 'meteor': {
+      const me = run.meteors.get(m.id); if (me) { planetG.remove(me.o); run.meteors.delete(m.id); }
+      const p = new THREE.Vector3(...m.p);
+      if (m.hit) { sfx.meteorSmash(p.toArray()); explode(p, 1.4); }
+      else if (m.ship) { sfx.shipHit(); explode(p, 1); }
+      else { sfx.boom(p.toArray(), 0.8); burst(p, '#e8e8f0', 30, 14, V2.copy(p).normalize()); if (distToCam(p) < 200) note('☄️ A meteor landed and washed some paint away — shoot them first!', 1800); }
+      break;
+    }
+    case 'mission': {
+      const ms = run.missions[m.i]; if (!ms) break;
+      ms.got = m.got; if (m.done) { ms.done = true; sfx.mission(); center('✅ MISSION COMPLETE', `${esc(ms.text)} · +${money(m.reward)}`, 2600); }
+      drawMissions(m.done ? m.i : -1);
+      break;
+    }
+    case 'event': {
+      if (['meteors', 'gold', 'drop', 'ace'].includes(m.k)) sfx.alert();
+      if (m.k === 'aceDown') sfx.gold();
+      if (m.k === 'goldGone') note('The Golden Googly got away…', 2200);
+      if (m.k === 'meteors') run.shake = 0.4;
+      break;
+    }
+    case 'combo': if (m.n === 0 && m.was) { sfx.comboLost(); note(`Combo ended at ×${(1 + Math.min(20, m.was) * 0.1).toFixed(1)}`, 1500); } else if (m.n) center(`×${(1 + Math.min(20, m.n) * 0.1).toFixed(1)} COMBO!`, `${m.n} in a row — keep it going`, 1100); break;
   }
 }
 function entityOf(k, id) { return k === 'turret' ? run.turrets.get(id) : k === 'fighter' ? run.fighters.get(id) : k === 'scrubber' ? run.scrubbers.get(id) : k === 'shield' ? run.shields.get(id) : null; }
 function syncFighters(list) {
   const seen = new Set(), accent = TYPES[run.pl.type].natives;
-  for (const a of list) { seen.add(a[0]); let f = run.fighters.get(a[0]); if (!f) { f = { o: makeFighter(accent), p: new THREE.Vector3(a[1], a[2], a[3]), v: new THREE.Vector3(), hp: 1 }; planetG.add(f.o); run.fighters.set(a[0], f); } f.tp = new THREE.Vector3(a[1], a[2], a[3]); f.v.set(a[4], a[5], a[6]); f.hp = a[7]; f.snapAt = performance.now(); }
+  for (const a of list) { seen.add(a[0]); let f = run.fighters.get(a[0]); if (!f) { f = { o: makeFighter(accent), p: new THREE.Vector3(a[1], a[2], a[3]), v: new THREE.Vector3(), hp: 1, ace: !!a[8] }; if (f.ace) acify(f.o); planetG.add(f.o); run.fighters.set(a[0], f); } f.tp = new THREE.Vector3(a[1], a[2], a[3]); f.v.set(a[4], a[5], a[6]); f.hp = a[7]; f.snapAt = performance.now(); }
   for (const [id, f] of run.fighters) if (!seen.has(id)) { planetG.remove(f.o); run.fighters.delete(id); }
 }
 function syncScrubbers(list) {
@@ -666,11 +699,21 @@ function syncScrubbers(list) {
 }
 function syncNatives(list) {
   const seen = new Set(), col = TYPES[run.pl.type].natives;
-  for (const a of list) { seen.add(a[0]); let n = run.natives.get(a[0]); if (!n) { n = { n: new Native(col), d: new THREE.Vector3(a[1], a[2], a[3]), h: new THREE.Vector3(a[4], a[5], a[6]), lift: a[7], st: a[8], spd: 1 }; planetG.add(n.n.group); run.natives.set(a[0], n); } n.td = new THREE.Vector3(a[1], a[2], a[3]); n.h.set(a[4], a[5], a[6]); n.tl = a[7]; if (a[8] === 1 && n.st !== 1 && Math.random() < 0.5) sfx.scream(n.d.clone().multiplyScalar(run.R).toArray()); n.st = a[8]; }
+  for (const a of list) { seen.add(a[0]); let n = run.natives.get(a[0]); if (n && !!a[9] !== n.gold) { planetG.remove(n.n.group); run.natives.delete(a[0]); n = null; } if (!n) { n = { n: new Native(col), d: new THREE.Vector3(a[1], a[2], a[3]), h: new THREE.Vector3(a[4], a[5], a[6]), lift: a[7], st: a[8], spd: 1, gold: !!a[9] }; if (n.gold) goldify(n.n); planetG.add(n.n.group); run.natives.set(a[0], n); } n.td = new THREE.Vector3(a[1], a[2], a[3]); n.h.set(a[4], a[5], a[6]); n.tl = a[7]; if (a[8] === 1 && n.st !== 1 && Math.random() < 0.5) sfx.scream(n.d.clone().multiplyScalar(run.R).toArray()); n.st = a[8]; }
   for (const [id, n] of run.natives) if (!seen.has(id)) { planetG.remove(n.n.group); run.natives.delete(id); }
 }
 function syncStorms(list) {
   for (const a of list) { let w = run.storms.get(a[0]); if (!w) { w = { o: makeStorm(run.R, Math.min(0.5, 90 / run.R + 0.12)), d: new THREE.Vector3(a[1], a[2], a[3]) }; planetG.add(w.o); run.storms.set(a[0], w); } w.td = new THREE.Vector3(a[1], a[2], a[3]); }
+}
+function syncPowerups(list) {
+  const seen = new Set();
+  for (const a of list) { seen.add(a[0]); if (!run.powerups.has(a[0])) { const o = makePowerup(a[4]); const p = new THREE.Vector3(a[1], a[2], a[3]); o.position.copy(p); planetG.add(o); run.powerups.set(a[0], { o, p, k: a[4] }); } }
+  for (const [id, u] of run.powerups) if (!seen.has(id)) { planetG.remove(u.o); run.powerups.delete(id); }
+}
+function syncMeteors(list) {
+  const seen = new Set();
+  for (const a of list) { seen.add(a[0]); let me = run.meteors.get(a[0]); if (!me) { me = { o: makeMeteor(), p: new THREE.Vector3(a[1], a[2], a[3]), v: new THREE.Vector3(a[4], a[5], a[6]) }; planetG.add(me.o); run.meteors.set(a[0], me); sfx.meteorIn(me.p.toArray()); } else { me.p.lerp(V1.set(a[1], a[2], a[3]), 0.5); } }
+  for (const [id, me] of run.meteors) if (!seen.has(id)) { planetG.remove(me.o); run.meteors.delete(id); }
 }
 function syncCoins(list) {
   const seen = new Set();
@@ -815,7 +858,8 @@ function findTarget() {
   const R = run.R;
   let best = null, bd = 1e9;
   const test = (p, rad) => { const t = V2.copy(p).sub(ray.origin).dot(ray.direction); if (t < 5 || t > 420) return; const d = ray.distanceToPoint(p); const tol = rad + t * 0.02; if (d < tol && t < bd) { bd = t; best = p; } };
-  for (const f of run.fighters.values()) test(f.o.position, 3);
+  for (const f of run.fighters.values()) test(f.o.position, f.ace ? 5 : 3);
+  for (const me of run.meteors.values()) test(me.o.position, 5);
   if (run.boss?.p) test(run.boss.o.position, 16);
   for (const t of run.turrets.values()) test(t.o.position.clone().addScaledVector(t.d, 1.6), 2.6);
   for (const c of run.scrubbers.values()) test(c.o.position.clone().addScaledVector(c.d, 1.2), 2.6);
@@ -954,6 +998,8 @@ function updatePlanet(dt) {
     b.o.userData.core.intensity = 600 + Math.sin(run.t * 6) * 300;
     $('boss-fill').style.width = (b.hp * 100) + '%';
   }
+  for (const u of run.powerups.values()) { const U = u.o.userData; U.gem.rotation.y += dt * 2; U.gem.rotation.x += dt * 1.3; U.cage.rotation.y -= dt; U.ring.rotation.z += dt * 3; const uu = V2.copy(u.p).normalize(); u.o.position.copy(u.p).addScaledVector(uu, Math.sin(run.t * 3 + u.p.x) * 0.8); orient(u.o, uu, V3.copy(camera.position).sub(u.p).projectOnPlane(uu).normalize()); }
+  for (const me of run.meteors.values()) { me.p.addScaledVector(me.v, dt); me.o.position.copy(me.p); me.o.quaternion.setFromUnitVectors(V2.set(0, 1, 0), V3.copy(me.v).normalize().negate()); me.o.userData.rock.rotation.x += dt * 3; }
   for (const c of run.coins.values()) { if (c.tp) c.p.lerp(c.tp, 1 - Math.exp(-12 * dt)); c.o.position.copy(c.p); c.o.rotation.y += dt * 4; c.o.up.copy(V2.copy(c.p).normalize()); }
   for (const fl of run.flags) { const u = fl.userData, pos = u.cloth.geometry.attributes.position; for (let i = 0; i < pos.count; i++) { const x = u.base[i * 3]; pos.setZ(i, Math.sin(x * 1.3 - run.t * 6) * 0.3 * (x + 3) / 6); } pos.needsUpdate = true; }
   updateFx(dt);
@@ -985,9 +1031,18 @@ function drawHud(dt) {
   $('role').classList.toggle('hidden', !C.room && run.t > 20);
   $('keys').textContent = run.t < 40 ? (amPilot() ? 'WASD fly · mouse steer & aim · Space up · C down · Shift boost · Click paint · Right-click bomb · E beam · X nuke · Esc menu' : 'Mouse aim · Click paint · Right-click bomb · X nuke · Tab crew · T chat') : '';
   $('h-earn').textContent = `+${money(run.earned)} this planet`;
+  const bf = [['rapid', run.buffs[0]], ['rainbow', run.buffs[1]], ['cash', run.buffs[2]]].filter(b => b[1] > 0);
+  const bh = bf.map(([k, t]) => `<div class="buff" style="--bc:#${new THREE.Color(POWER[k].color).getHexString()}">${POWER[k].icon} ${POWER[k].name}<i>${Math.ceil(t)}s</i></div>`).join('');
+  if ($('buffs')._h !== bh) { $('buffs').innerHTML = bh; $('buffs')._h = bh; }
+  const cb = $('combo'); cb.classList.toggle('on', run.combo >= 2);
+  if (run.combo >= 2) { cb.querySelector('b').textContent = '×' + (1 + Math.min(20, run.combo) * 0.1).toFixed(1); cb.querySelector('i').style.transform = `scaleX(${Math.max(0, run.comboT / 7)})`; }
   run.mmT -= dt; if (run.mmT <= 0) { run.mmT = 0.25; drawMinimap(); }
   $('board').classList.toggle('hidden', !showBoard);
   if (showBoard) $('board').innerHTML = `<table><tr><th>CREW</th><th>SEAT</th></tr>${C.players.map(p => `<tr class="${p.id === C.id ? 'me' : ''}"><td><span class="dot" style="background:${esc(p.color)}"></span> ${esc(p.name)}</td><td>${p.seat === 0 ? '🛸 pilot' : '🎯 gunner'}</td></tr>`).join('')}</table><p class="tiny">${esc(run.pl.name)} · ${run.turrets.size} turrets left · ${run.shields.size} shield domes · ${run.natives.size} natives around</p>`;
+}
+function drawMissions(flash = -1) {
+  if (!run) return;
+  $('missions').innerHTML = '<div class="mh">MISSIONS · bonus cash</div>' + run.missions.map((m, i) => `<div class="ms ${m.done ? 'done' : ''} ${i === flash ? 'flash' : ''}">${esc(m.text)}<b>${m.done ? '+' + money(m.reward) : m.k === 'speed' ? m.got + '/' + m.n + '%' : m.got + '/' + m.n}</b></div>`).join('');
 }
 function drawHudCrew() { $('crew').innerHTML = C.room ? C.players.slice().sort((a, b) => a.seat - b.seat).map(p => `<div class="cm ${p.id === C.id ? 'me' : ''}"><span class="dot" style="background:${esc(p.color)}"></span>${esc(p.name)}<span class="st">${p.seat === 0 ? '🛸 pilot' : '🎯 gunner'}</span></div>`).join('') : ''; }
 const mmImg = document.createElement('canvas'); mmImg.width = GW; mmImg.height = GH;
@@ -1007,6 +1062,10 @@ function drawMinimap() {
   for (const sc of run.scrubbers.values()) dot(sc.d, '#ffe23a', 2.6);
   for (const f of run.fighters.values()) dot(V1.copy(f.p).normalize(), '#ff8a8a', 2);
   if (run.boss?.p) dot(V1.copy(run.boss.p).normalize(), '#ff2a2a', 5);
+  for (const u of run.powerups.values()) dot(V1.copy(u.p).normalize(), '#5affff', 3.2);
+  for (const me of run.meteors.values()) dot(V1.copy(me.p).normalize(), '#ffffff', 2.2);
+  for (const n of run.natives.values()) if (n.gold) { const [x, y] = pt(n.d); g.font = '16px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('⭐', x, y); }
+  for (const f of run.fighters.values()) if (f.ace) dot(V1.copy(f.p).normalize(), '#ffa82a', 4.5);
   const sp = V1.copy(run.ship.p).normalize(); const [x, y] = pt(sp);
   g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); g.stroke();
 }
@@ -1090,6 +1149,7 @@ else if (Q.has('solo')) {
     send({ t: 'go' });
     const cov = +Q.get('cov') || 0;
     if (cov) setTimeout(() => { const R = local.room.run; if (!R) return; const n = Math.round(cov * 2600); for (let i = 0; i < n; i++) { const z = Math.random() * 2 - 1, a = Math.random() * 6.28, q = Math.sqrt(1 - z * z); local.room.paint([q * Math.cos(a), z, q * Math.sin(a)], 0.07, 1, local.p); } }, 300);
+    if (Q.has('ev')) setTimeout(() => { const R = local.room.run; if (R) { local.room.startEvent(Q.get('ev')); R.puT = 0; } }, 1500);
     if (Q.has('win')) setTimeout(() => { const R = local.room.run; if (R) { R.bossDead = true; R.boss = null; R.paintedW = 1e9; } }, 3000);
   }, 400);
 }

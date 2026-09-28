@@ -46,7 +46,7 @@ export class Space {
     this.nebula = null; this.sunSprite = null; this.flares = [];
     this.makeSun('#fff2c8');
     this.setGalaxy('#3a5aa8', 1);
-    if (!lq) {
+    if (!lq && !mobile) {
       this.composer = new EffectComposer(this.renderer);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
       this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.55, 0.82);

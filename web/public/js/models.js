@@ -320,3 +320,53 @@ export function makeFlag(color) {
   G.userData = { cloth, base: geo.attributes.position.array.slice() };
   return G;
 }
+
+// ------------------------------------------------------------------ power-ups, paint meteors
+export const POWER = {
+  rapid: { color: 0xff5a2a, icon: '⚡', name: 'RAPID FIRE', line: 'double speed, free paint' },
+  rainbow: { color: 0xff4ad8, icon: '🌈', name: 'RAINBOW PAINT', line: 'giant rainbow splats' },
+  repair: { color: 0x3aff7a, icon: '🔧', name: 'REPAIR KIT', line: 'hull and shield fixed' },
+  cash: { color: 0xffd23a, icon: '💰', name: 'DOUBLE CASH', line: 'everything pays ×2' },
+  bomb: { color: 0x5ab8ff, icon: '💣', name: 'RELOAD', line: 'full tank, bomb ready' },
+  nuke: { color: 0xb04aff, icon: '☢️', name: 'NUKE CHARGE', line: '+50% rainbow nuke' },
+};
+const iconTex = new Map();
+function emojiTex(e) { if (iconTex.has(e)) return iconTex.get(e); const t = cvTex(128, 128, (g, w) => { g.font = '96px "Apple Color Emoji", "Segoe UI Emoji", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(e, w / 2, w / 2 + 6); }); iconTex.set(e, t); return t; }
+export function makePowerup(k) {
+  const P = POWER[k] || POWER.rapid, G = new THREE.Group();
+  const gem = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2, 0), phys({ color: P.color, emissive: P.color, emissiveIntensity: 1.6, roughness: 0.1, metalness: 0.3, clearcoat: 1, transparent: true, opacity: 0.85 }));
+  const cage = new THREE.Mesh(new THREE.IcosahedronGeometry(2.9, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color(P.color).multiplyScalar(2), wireframe: true, transparent: true, opacity: 0.35 }));
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(3.6, 0.14, 8, 48), glow(P.color, 3)); ring.rotation.x = Math.PI / 2;
+  const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: emojiTex(P.icon), depthWrite: false, transparent: true })); icon.scale.setScalar(4); icon.position.y = 5;
+  const light = new THREE.PointLight(P.color, 300, 40, 1.8);
+  G.add(gem, cage, ring, icon, light);
+  G.userData = { gem, cage, ring };
+  return G;
+}
+export function makeMeteor() {
+  const G = new THREE.Group();
+  const geo = new THREE.IcosahedronGeometry(3, 1), pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) { const v = new THREE.Vector3().fromBufferAttribute(pos, i); v.multiplyScalar(0.8 + Math.random() * 0.4); pos.setXYZ(i, v.x, v.y, v.z); }
+  geo.computeVertexNormals();
+  const hue = Math.random();
+  const rock = new THREE.Mesh(geo, std(0x3a3430, 0.95)); rock.castShadow = true; G.add(rock);
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(hue, 1, 0.55).multiplyScalar(2.5) })); G.add(core);
+  core.scale.setScalar(1.05); rock.scale.setScalar(1.12);
+  const trail = new THREE.Mesh(new THREE.ConeGeometry(2.6, 26, 16, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(hue, 1, 0.6).multiplyScalar(1.8), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  trail.position.y = 13; G.add(trail);
+  G.userData = { rock, trail, hue };
+  return G;
+}
+const goldMat = phys({ color: 0xffc83a, metalness: 1, roughness: 0.15, clearcoat: 1, emissive: 0x6a4a00, emissiveIntensity: 0.6 });
+/** A native googly made of solid gold, with sparkles. */
+export function goldify(nat) {
+  nat.b.material = goldMat;
+  const l = new THREE.PointLight(0xffd23a, 200, 30, 1.8); l.position.y = 2; nat.group.add(l);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: emojiTex('✨'), depthWrite: false, transparent: true })); sp.scale.setScalar(2.4); sp.position.y = 2.6; nat.group.add(sp);
+  nat.group.scale.setScalar(1.6);
+}
+export function acify(fighterGroup) {
+  fighterGroup.scale.setScalar(1.8);
+  fighterGroup.traverse(o => { if (o.isMesh && o.material?.color && o.material.clearcoat !== undefined && o.material.opacity === 1 && !o.material.transparent) { o.material = o.material.clone(); o.material.color.set(0x1a1a1e); } });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.12, 6, 32), glow(0xffa82a, 3)); ring.rotation.x = Math.PI / 2; fighterGroup.add(ring);
+}

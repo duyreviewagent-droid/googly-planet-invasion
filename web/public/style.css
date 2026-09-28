@@ -267,3 +267,21 @@ body.mobile #m-side { padding: 10px; }
 #m-go { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -8px 16px #0a0816; }
 body.mobile #m-gal { font-size: 9px; letter-spacing: 1px; } body.mobile #m-prog { font-size: 10px; }
 body.mobile #m-info .defs { font-size: 11px; } body.mobile #m-info .fl { display: none; }
+
+/* missions, buffs, combo */
+#missions { left: max(12px, env(safe-area-inset-left)); top: 96px; width: 260px; font-size: 12px; padding: 7px 10px; line-height: 1.35; }
+#missions .mh { font-size: 10px; letter-spacing: 2px; color: var(--p); margin-bottom: 3px; }
+#missions .ms { display: flex; gap: 6px; align-items: baseline; margin: 2px 0; } #missions .ms b { margin-left: auto; color: #9affc0; font-size: 11px; white-space: nowrap; }
+#missions .ms.done { opacity: .55; text-decoration: line-through; } #missions .ms.done::before { content: '✅'; } #missions .ms:not(.done)::before { content: '⬜'; font-size: 10px; }
+#missions .ms.flash { animation: upflash .8s; }
+#buffs { position: absolute; right: max(12px, env(safe-area-inset-right)); bottom: 200px; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.buff { background: #05040cc8; border: 1.5px solid var(--bc); border-radius: 10px; padding: 3px 10px; font-weight: 900; font-size: 13px; box-shadow: 0 0 12px var(--bc); }
+.buff i { font-style: normal; opacity: .8; margin-left: 6px; }
+#combo { position: absolute; left: calc(50% + 70px); top: calc(50% - 24px); text-align: left; opacity: 0; transition: opacity .2s; font-family: Futura, "Arial Black", sans-serif; text-shadow: 2px 2px 0 #000; }
+#combo b { font-size: 30px; color: #ffd23a; display: block; line-height: 1; } #combo small { font-size: 11px; letter-spacing: 2px; }
+#combo i { display: block; height: 4px; width: 80px; background: #ffd23a; border-radius: 2px; margin-top: 3px; transform-origin: left; }
+#combo.on { opacity: 1; } #combo.pop b { animation: pop .3s; }
+body.mobile #missions { top: auto; bottom: calc(var(--sb) + 150px); left: var(--sl); width: 200px; font-size: 10px; padding: 4px 8px; } body.mobile #missions .mh { display: none; }
+body.mobile #buffs { right: auto; left: 50%; transform: translateX(-50%); bottom: auto; top: calc(var(--st) + 44px); flex-direction: row; } body.mobile .buff { font-size: 10px; padding: 1px 6px; }
+body.mobile #combo { left: calc(50% + 40px); } body.mobile #combo b { font-size: 22px; }
+@media (orientation: portrait) { body.mobile #missions { bottom: calc(var(--sb) + 300px); } body.mobile #buffs { top: calc(var(--st) + 90px); } }
