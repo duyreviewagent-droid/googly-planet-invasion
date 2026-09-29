@@ -768,7 +768,7 @@ const keys = new Set();
 let locked = false, mouseL = false, mouseR = false, camPitch = -0.42, camYaw = 0, zoom = 17, chatOpen = false, showBoard = false;
 const touch = { mx: 0, my: 0, fire: false, beam: false, up: false, down: false, boost: false, look: null, lookId: null, stickId: null };
 function lock() { if (view !== 'planet' || mobile) return; if (isMac) window.webkit.messageHandlers.gp.postMessage('lock'); else $('view').requestPointerLock?.(); }
-function releaseLock() { if (isMac) { if (locked) window.webkit.messageHandlers.gp.postMessage('unlock'); } else if (document.pointerLockElement) document.exitPointerLock(); locked = false; mouseL = mouseR = false; }
+function releaseLock() { if (isMac) window.webkit.messageHandlers.gp.postMessage('unlock'); else if (document.pointerLockElement) document.exitPointerLock(); locked = false; mouseL = mouseR = false; }
 window.__look = (dx, dy) => { locked = true; look(dx, dy); };
 window.__mouse = (b, down) => { locked = true; $('clickto').classList.add('hidden'); if (b === 0) mouseL = down; if (b === 2) { if (down && !mouseR) bombNow(); mouseR = down; } };
 window.__unlocked = () => { locked = false; mouseL = mouseR = false; if (view === 'planet' && !screen) pause(); };
@@ -804,7 +804,7 @@ function openChat() { chatOpen = true; releaseLock(); $('chatform').classList.re
 function closeChat() { chatOpen = false; $('chatform').classList.add('hidden'); $('chatin').blur(); if (view === 'planet' && !screen) lock(); }
 function bombNow() { if (!run || run.ship.down > 0) return; const S = stats(); if (!S.bomb) { note('💣 Paint Bombs are an upgrade — buy them at the mothership'); sfx.nope(); return; } if (run.bombCd > 0) { sfx.nope(); return; } const d = aimDir(true); send({ t: 'bomb', d: d.toArray() }); run.bombCd = S.bomb.cd; }
 function nukeNow() { if (!run) return; const S = stats(); if (!S.nuke) { note('🌈 The Rainbow Nuke is an upgrade — buy it at the mothership'); sfx.nope(); return; } if (run.ship.nuke < 1) { note(`🌈 Nuke charging… ${Math.round(run.ship.nuke * 100)}% — keep painting`); sfx.nope(); return; } send({ t: 'nuke' }); }
-function pause() { if (view !== 'planet') return; keys.clear(); mouseL = mouseR = false; touch.fire = touch.beam = false; show('scr-pause'); $('clickto').classList.add('hidden'); $('p-note').textContent = local ? 'Paused — nothing moves until you press RESUME.' : "Online invasions can't pause — your crew is still flying!"; $('p-retreat').classList.toggle('hidden', !(amHost() || amPilot())); }
+function pause() { if (view !== 'planet') return; releaseLock(); keys.clear(); mouseL = mouseR = false; touch.fire = touch.beam = false; show('scr-pause'); $('clickto').classList.add('hidden'); $('p-note').textContent = local ? 'Paused — nothing moves until you press RESUME.' : "Online invasions can't pause — your crew is still flying!"; $('p-retreat').classList.toggle('hidden', !(amHost() || amPilot())); }
 function resume() { sfx.click(); show(null); if (!mobile) lock(); }
 $('p-resume').onclick = resume;
 $('p-retreat').onclick = () => { sfx.click(); show(null); send({ t: 'retreat' }); };
